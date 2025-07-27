@@ -1,0 +1,51 @@
+# --- Python General ---
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+*.pyo
+*.log
+*.tmp
+
+# --- Virtual Environments ---
+venv/
+.env/
+ENV/
+env/
+.venv/
+
+# --- Jupyter / IPython (just in case) ---
+.ipynb_checkpoints/
+.profile_default/
+.ipython/
+
+# --- Spyder Project Files ---
+.spyproject/
+.history.py
+workspace.ini
+
+# --- OS-Specific Garbage ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- VS Code or Other Editor Caches (if applicable) ---
+.vscode/
+.idea/
+
+# --- Build Artifacts ---
+build/
+dist/
+*.egg-info/
+*.manifest
+*.spec
+
+# --- Other ---
+*.bak
+*.swp
+*.~*
+
+# Optional: Ignore requirements.txt if you want to manage it separately
+# requirements.txt
+

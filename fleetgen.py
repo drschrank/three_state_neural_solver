@@ -224,10 +224,77 @@ class Fleet:
         failed = False
         failed_cycle = np.nan
         
-        chktbl=results_tbl[results_tbl[:,0]<=self.requirement,:]      
-        
+        chktbl=results_tbl[results_tbl[:,0]<=self.requirement,:]
+
         if any(chktbl[:,1]==2) or any(chktbl[:,1]==3):
             failed=True
             failed_cycle=step
-        
+
         return failed,failed_cycle
+
+
+    def to_sql(self, database_path, table_name='trainingdata'):
+        """Write the fleet's unit data to an SQLite database.
+
+        Parameters
+        ----------
+        database_path : str
+            Path to the SQLite database file to create/overwrite.
+        table_name : str, optional
+            Name of the table to store the data in, by default ``'trainingdata'``.
+
+        Notes
+        -----
+        The resulting table contains four columns matching the
+        expectations of :class:`ThreeStateSolverNetwork`:
+
+        ``Result``  (int)
+            The state code for a particular insult level.
+        ``Age`` (float)
+            Age corresponding to the timestep of the measurement.
+        ``UnitID`` (int)
+            Identifier of the unit within the fleet.
+        ``Insult`` (float)
+            The stimulus value associated with the result.
+
+        The method flattens the internal ``unit`` dictionary into a
+        long-format table and writes it to ``database_path`` using
+        :func:`pandas.DataFrame.to_sql`.
+        """
+
+        # Local imports to keep base requirements light if SQL export is
+        # never used.
+        import pandas as pd
+        from sqlalchemy import create_engine
+
+        records = []
+
+        for unit_id, unit_data in self.unit.items():
+            ages = unit_data['age']
+            timesteps = unit_data['data']
+
+            for age, timestep_tbl in zip(ages, timesteps):
+                timestep_tbl = np.asarray(timestep_tbl)
+                if timestep_tbl.size == 0:
+                    continue
+
+                insults = timestep_tbl[:, 0]
+                results = timestep_tbl[:, 1]
+
+                for insult, result in zip(insults, results):
+                    records.append({
+                        'Result': int(result),
+                        'Age': float(age),
+                        'UnitID': int(unit_id),
+                        'Insult': float(insult)
+                    })
+
+        if not records:
+            # No data to write; create an empty database with the proper schema.
+            df = pd.DataFrame(columns=['Result', 'Age', 'UnitID', 'Insult'])
+        else:
+            df = pd.DataFrame.from_records(records)
+
+        engine = create_engine(f'sqlite:///{database_path}')
+        with engine.begin() as connection:
+            df.to_sql(table_name, connection, if_exists='replace', index=False)

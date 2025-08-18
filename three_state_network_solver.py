@@ -6,7 +6,8 @@ import pandas as pd
 import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset, DataLoader
-
+from pathlib import Path
+import re
 # ---------- Class ----------
 class ThreeStateSolverNetwork:
     """
@@ -31,6 +32,21 @@ class ThreeStateSolverNetwork:
         assert np.isscalar(req), 'The requirement must be a scalar.'
         assert os.path.exists(database_path), 'The database path does not exist.'
         assert isinstance(float64, bool), 'float64 must be a boolean (True or False).'
+        
+        #For check that the database path is valid
+        db_path = Path(database_path).expanduser().resolve()
+        assert db_path.exists() and db_path.is_file(), f"DB not found: {db_path}"
+
+        #For checking that the table name is valid
+
+
+        valid_ident = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+        assert isinstance(table_name, str), "table_name must be a string."
+        assert valid_ident.match(table_name), (
+            f"Invalid table_name '{table_name}'. "
+            "Must start with a letter/underscore and contain only letters, digits, or underscores."
+                )
+
 
         # Store parameters
         self.numunits = numunit
@@ -43,7 +59,7 @@ class ThreeStateSolverNetwork:
         self.torch_dtype = torch.float64 if float64 else torch.float32
 
         # Connect to the SQL database
-        self.engine = create_engine(f'sqlite:///{database_path}')
+        self.engine = create_engine(f"sqlite:///{db_path.as_posix()}")
         query = f"SELECT Result, Age, UnitID, Insult FROM {table_name};"
         self.trainingdataframe = pd.read_sql_query(query, self.engine)
 
@@ -84,39 +100,48 @@ class ThreeStateSolverNetwork:
         #Build the PyTorch tensor
     def build_tensor_sequences(self, bins=10, bin_range=(0, 10)):
         """
-        Convert the raw dataframe into two dictionaries:
-    
-            Returns:
-        tensor_sequences: { UnitID: torch.tensor([ [features_t1], [features_t2], ... ]) }
-        tensor_targets:   { UnitID: torch.tensor([ [target_t1], [target_t2], ... ]) }
+        Returns:
+          tensor_sequences: { UnitID: torch.Tensor [T, F] }
+          tensor_targets:   { UnitID: torch.Tensor [T, 1] }
         """
         unitdata = self.trainingdataframe.sort_values(['UnitID', 'Age'])
-        
-        unitdata = unitdata.groupby(['UnitID'])
-
-        # Returned values
+        grouped_by_unit = unitdata.groupby('UnitID')
+    
         tensor_sequences = {}
         tensor_targets = {}
-
-        for unit_id, group in unitdata:
-            
+    
+        for unit_id, group in grouped_by_unit:
+            # Ensure strictly increasing ages within unit
+            group = group.sort_values('Age')
+    
             features_list = []
             target_list = []
-
+    
             for age, timestepdata in group.groupby('Age'):
-            
-                 features, target = self.encode_time_step(timestepdata, age,
-                                                 bins=bins, bin_range=bin_range)
-                 features_list.append(features)
-                 target_list.append(target)
-
-            tensor_sequences[unit_id] = torch.tensor(features_list,
-                                                     dtype=self.torch_dtype)
-            tensor_targets[unit_id] = torch.tensor(target_list,
-                                                   dtype=self.torch_dtype).unsqueeze(1)
-
-
+                features, target = self.encode_time_step(
+                    timestepdata, age, bins=bins, bin_range=bin_range
+                )
+                # Expect: features -> np.ndarray [F], target -> scalar/np.ndarray []
+                features_list.append(np.asarray(features))
+                target_list.append(np.asarray(target))
+    
+            # Optional: sanity-check consistent feature shape across timesteps
+            feat_shapes = {f.shape for f in features_list}
+            if len(feat_shapes) != 1:
+                raise ValueError(
+                    f"Inconsistent feature shapes for UnitID={unit_id}: {feat_shapes}. "
+                    "Pad/truncate to a common length before stacking."
+                )
+    
+            # Stack to a single ndarray, then convert (no copy) to torch
+            feats_np = np.stack(features_list, axis=0).astype(self.np_dtype, copy=False)  # [T, F]
+            targs_np = np.asarray(target_list, dtype=self.np_dtype).reshape(-1, 1)        # [T, 1]
+    
+            tensor_sequences[unit_id] = torch.from_numpy(feats_np).to(dtype=self.torch_dtype)
+            tensor_targets[unit_id]   = torch.from_numpy(targs_np).to(dtype=self.torch_dtype)
+    
         return tensor_sequences, tensor_targets
+
 
 # ---------- Training Method ----------
 
@@ -235,11 +260,11 @@ class FailurePredictor(torch.nn.Module):
 
     def __init__(self, input_size, hidden_size, output_size=1):
         super(FailurePredictor, self).__init__()
-        self.lstm = torch.LSTM(input_size=input_size,
+        self.lstm = torch.nn.LSTM(input_size=input_size,
                             hidden_size=hidden_size,
                             batch_first=True)
-        self.fc = torch.Linear(hidden_size, output_size)
-        self.sigmoid = torch.Sigmoid()
+        self.fc = torch.nn.Linear(hidden_size, output_size)
+        self.sigmoid = torch.nn.Sigmoid()
 
     def forward(self, x):
         lstm_out, _ = self.lstm(x)          # [batch, seq_len, hidden_size]

@@ -9,14 +9,20 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from fleetgen import Fleet
+from three_state_network_solver import ThreeStateSolverNetwork
 
-count = 0
+
 
 testFleet=Fleet(1000, 50, 10,  
                 25,.1,
                 0,0,(0,200),100,
                 (4,0.2), (2,0.1),
                 (4.7,0.3),0.5, 0.5)
+testFleet.create_fleet()
+testFleet.to_sql("/home/geoff/Documents/SQL_Database/fleet1.sql")
+#
+#%%
+count = 0
 
 for testfleetnum in range(10):
     testFleet.create_fleet()

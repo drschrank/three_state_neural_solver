@@ -18,13 +18,13 @@ newthreestate = ThreeStateSolverNetwork("/home/geoff/Documents/SQL_Database/flee
 newthreestate.trainmodel(20,(0,200))
 #%%
 # --- parameters ---
-db_path = Path("home/geoff/Documents/SQL_Database/fleet1.sql")
+db_path = Path("/home/geoff/Documents/SQL_Database/fleet1.sql")
 table_name = "trainingdata"
-n = 3
+n = 100
 k = 5
 age_max = 25
-bins = 10
-bin_range = (0, 10)
+bins = 20
+bin_range = (0, 200)
 rng = np.random.default_rng(42)
 
 # assume we already have an instantiated network object
@@ -54,6 +54,6 @@ for uid in sampled_units:
         f, _ = newthreestate.encode_time_step(timestep, age, bins=bins, bin_range=bin_range)
         feats.append(torch.from_numpy(f).to(dtype=newthreestate.torch_dtype))
     test_sequences[uid] = torch.stack(feats, dim=0)
-
+#%%
 # now you can call:
 preds = newthreestate.predict(test_sequences)
